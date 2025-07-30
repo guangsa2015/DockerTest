@@ -1,0 +1,67 @@
+#声明 compose版本
+version: '3.8'
+
+
+#  很重要 。。。 自定义网络：所有服务在同一网络内通信
+networks:
+  app-network:
+    driver: bridge  # 桥接网络，适合单机部署
+
+services:
+
+  mysql:
+    image: docker.1ms.run/mysql:latest
+    ports:
+      - "3306:3306"
+    environment:
+      # 数据库初始化配置（必须设置）
+      MYSQL_ROOT_PASSWORD: mysql2025  # root用户密码
+      MYSQL_DATABASE: test_db        # 数据库名
+      MYSQL_USER: app_user          # 应用访问数据库的用户名
+      MYSQL_PASSWORD: mysql2025       # 应用用户密码
+    healthcheck: #很重要 。。。 数据启动后才能去启动app
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-u", "root", "-p $$MYSQL_ROOT_PASSWORD"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - app-network
+  redis:
+    image: docker.1ms.run/redis:latest
+    ports:
+      - "6379:6379"
+    command:
+        - redis-server
+        - --requirepass
+        - "123456"
+    healthcheck:
+      test: [ "CMD", "redis-cli", "-a", "123456", "ping" ]  # 验证密码是否生效
+      interval: 5s
+      timeout: 3s
+      retries: 3
+    networks:
+      - app-network
+
+  spring-app:
+    image: my-spring-app:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+     - "8080:8080"
+    environment:
+      - SPRING_DATA_REDIS_HOST=redis  #很重要的配置，不能使用localhost,应该用服务名
+      - SPRING_DATA_REDIS_PORT=6379
+      - SPRING_DATA_REDIS_PASSWORD=123456
+      - SPRING_DATASOURCE_URL=jdbc:mysql://mysql:3306/test_db?useSSL=false&serverTimezone=Asia/Shanghai&allowPublicKeyRetrieval=true
+      - SPRING_DATASOURCE_USERNAME=app_user  #很重要 。。。 host不能用Localhost, 用户名不能用root
+      - SPRING_DATASOURCE_PASSWORD=mysql2025
+      - SPRING_DATASOURCE_DRIVER_CLASS_NAME=com.mysql.cj.jdbc.Driver
+    depends_on:
+        redis:
+          condition: service_healthy
+        mysql:
+          condition: service_healthy
+    networks:
+      - app-network
+
